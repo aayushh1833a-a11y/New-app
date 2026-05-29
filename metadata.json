@@ -1,0 +1,6 @@
+{
+  "name": "CapCut Studio",
+  "description": "CapCut Studio is an AI-powered professional-quality mobile video editing application.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
