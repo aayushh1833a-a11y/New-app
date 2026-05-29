@@ -33,6 +33,12 @@ import com.example.ui.theme.*
 import com.example.ui.viewmodel.GalleryMediaItem
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.PhotoAlbum
 
 // High-Fidelity Preconfigured Stock Assets for the Virtual Gallery
 val VirtualGalleryStock = listOf(
@@ -51,17 +57,41 @@ fun MediaSelectorScreen(
     onDismiss: () -> Unit,
     onMediaImported: (List<GalleryMediaItem>) -> Unit
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var selectedItems by remember { mutableStateOf(emptyList<GalleryMediaItem>()) }
+    var deviceSelectedItems by remember { mutableStateOf(emptyList<GalleryMediaItem>()) }
     var activeTab by remember { mutableStateOf("all") } // "all", "video", "photo"
     var isImportingLoading by remember { mutableStateOf(false) }
     var importProgress by remember { mutableStateOf(0f) }
 
-    val filteredGallery = remember(activeTab) {
+    val sysPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            val importedItems = uris.mapIndexed { idx, uri ->
+                val uriStr = uri.toString()
+                val isVideo = uriStr.contains("video") || uriStr.contains("mp4") || uriStr.contains("mov") || uriStr.contains("mkv")
+                GalleryMediaItem(
+                    id = "sys_${System.currentTimeMillis()}_$idx",
+                    title = "Device ${if (isVideo) "Video" else "Photo"} ${idx + 1}",
+                    type = if (isVideo) "video" else "photo",
+                    durationMs = if (isVideo) 8000L else 4000L,
+                    resourceName = uriStr
+                )
+            }
+            deviceSelectedItems = deviceSelectedItems + importedItems
+            selectedItems = selectedItems + importedItems
+            Toast.makeText(context, "Selected ${importedItems.size} device files!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val filteredGallery = remember(activeTab, deviceSelectedItems) {
+        val totalList = VirtualGalleryStock + deviceSelectedItems
         when (activeTab) {
-            "video" -> VirtualGalleryStock.filter { it.type == "video" }
-            "photo" -> VirtualGalleryStock.filter { it.type == "photo" }
-            else -> VirtualGalleryStock
+            "video" -> totalList.filter { it.type == "video" }
+            "photo" -> totalList.filter { it.type == "photo" }
+            else -> totalList
         }
     }
 
@@ -160,6 +190,70 @@ fun MediaSelectorScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                }
+            }
+
+            // PROMINENT DIRECT SYSTEM DEVICE GALLERY CARD PICKER BUTTON
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clickable {
+                        try {
+                            sysPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                            )
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "System Picker Launcher failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                colors = CardDefaults.cardColors(containerColor = TimelineGrid),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderGray)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Brush.linearGradient(listOf(AccentCyan, PrimaryViolet))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Photo,
+                                contentDescription = "Device Gallery",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Open Device Gallery",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = LightText
+                            )
+                            Text(
+                                text = "Import files directly from local storage",
+                                fontSize = 11.sp,
+                                color = MutedText
+                            )
+                        }
+                    }
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Arrow",
+                        tint = MutedText,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
 

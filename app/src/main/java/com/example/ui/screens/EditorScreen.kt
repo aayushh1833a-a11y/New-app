@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -100,6 +102,33 @@ fun EditorScreen(
         findActiveClipAtPlayhead(playheadPositionMs, sortedClips)
     }
 
+    val systemImageBitmap by produceState<ImageBitmap?>(initialValue = null, activeClipData) {
+        value = null
+        val resourceStr = activeClipData?.first?.resourceName
+        if (resourceStr != null && (resourceStr.startsWith("content://") || resourceStr.startsWith("file://"))) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val uri = android.net.Uri.parse(resourceStr)
+                    if (activeClipData.first.type == "video") {
+                        val retriever = android.media.MediaMetadataRetriever()
+                        retriever.setDataSource(context, uri)
+                        val timeUs = activeClipData.second * 1000L
+                        val bmp = retriever.getFrameAtTime(timeUs, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        retriever.release()
+                        value = bmp?.asImageBitmap()
+                    } else {
+                        context.contentResolver.openInputStream(uri).use { stream ->
+                            val bmp = android.graphics.BitmapFactory.decodeStream(stream)
+                            value = bmp?.asImageBitmap()
+                        }
+                    }
+                } catch (e: Exception) {
+                    value = null
+                }
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -175,7 +204,8 @@ fun EditorScreen(
                         playheadMs = playheadPositionMs,
                         activeClipData = activeClipData,
                         textOverlays = textOverlays,
-                        removeWatermark = removeWatermark
+                        removeWatermark = removeWatermark,
+                        systemImageBitmap = systemImageBitmap
                     )
                 }
 
@@ -1325,7 +1355,8 @@ fun DrawScope.drawVideoPreviewCanvasFrame(
     playheadMs: Long,
     activeClipData: Pair<ClipEntity, Long>?,
     textOverlays: List<TextOverlayEntity>,
-    removeWatermark: Boolean
+    removeWatermark: Boolean,
+    systemImageBitmap: ImageBitmap? = null
 ) {
     if (activeClipData == null) {
         // Draw empty screen card
@@ -1347,8 +1378,26 @@ fun DrawScope.drawVideoPreviewCanvasFrame(
             pivot = center
         ) {
             // HIGH FIDELITY COMPOSE CORE ANIMATED VECTOR GRAPHICS SCENE SECTIONS
-            when (clip.resourceName) {
-                "neon_city" -> {
+            if (systemImageBitmap != null) {
+                // Scale and center the device-loaded thumbnail/image on the dynamic scene background
+                val canvasWidth = size.width
+                val canvasHeight = size.height
+                val imageWidth = systemImageBitmap.width.toFloat()
+                val imageHeight = systemImageBitmap.height.toFloat()
+                
+                val scale = maxOf(canvasWidth / imageWidth, canvasHeight / imageHeight)
+                val dx = (canvasWidth - imageWidth * scale) / 2f
+                val dy = (canvasHeight - imageHeight * scale) / 2f
+                
+                withTransform({
+                    translate(left = dx, top = dy)
+                    scale(scaleX = scale, scaleY = scale, pivot = Offset.Zero)
+                }) {
+                    drawImage(image = systemImageBitmap)
+                }
+            } else {
+                when (clip.resourceName) {
+                    "neon_city" -> {
                     // Tokyo skyscrapers moving
                     drawRect(color = getGracedColor(Color(0xFF03001e), filterType))
 
@@ -1525,6 +1574,160 @@ fun DrawScope.drawVideoPreviewCanvasFrame(
                 else -> {
                     drawRect(color = Color(0xFF1E1E24))
                 }
+            }
+        }
+
+            // DYNAMIC HIGH-QUALITY ILLUSTRATION OVERLAYS ACCORDING TO USER'S TEXT/PROMPT KEYWORDS
+            val lowerTitle = clip.title.lowercase()
+            if (lowerTitle.contains("space") || lowerTitle.contains("star") || lowerTitle.contains("ship") || lowerTitle.contains("galaxy") || lowerTitle.contains("alien") || lowerTitle.contains("astro")) {
+                // Floating stars
+                for (s in 1..4) {
+                    val sx = (size.width * 0.15f * s + relMs * 0.05f) % size.width
+                    val sy = (size.height * 0.25f + s * 40.dp.toPx()) % size.height
+                    drawCircle(
+                        color = getGracedColor(Color.White, filterType),
+                        radius = 4.dp.toPx() * (1f + sin(relMs * 0.005 + s).toFloat() * 0.3f),
+                        center = Offset(sx, sy)
+                    )
+                }
+                // Space rocket/spaceship triangle vector
+                val rx = center.x + cos(relMs * 0.003).toFloat() * 60.dp.toPx()
+                val ry = center.y + sin(relMs * 0.002).toFloat() * 40.dp.toPx()
+                val rPath = Path().apply {
+                    moveTo(rx, ry - 15.dp.toPx())
+                    lineTo(rx - 10.dp.toPx(), ry + 15.dp.toPx())
+                    lineTo(rx + 10.dp.toPx(), ry + 15.dp.toPx())
+                    close()
+                }
+                drawPath(rPath, color = getGracedColor(Color(0xFF38BDF8), filterType))
+                // Rocket engine fire flare pulse
+                drawCircle(
+                    color = getGracedColor(Color(0xFFEF4444), filterType),
+                    radius = 6.dp.toPx() * (1f + sin(relMs * 0.01).toFloat() * 0.2f),
+                    center = Offset(rx, ry + 16.dp.toPx())
+                )
+            }
+
+            if (lowerTitle.contains("robot") || lowerTitle.contains("ai") || lowerTitle.contains("cyborg") || lowerTitle.contains("mech") || lowerTitle.contains("synthetic")) {
+                // Robot head outline mask
+                drawRoundRect(
+                    color = getGracedColor(Color(0xFF94A3B8), filterType),
+                    topLeft = Offset(center.x - 45.dp.toPx(), center.y - 40.dp.toPx()),
+                    size = Size(90.dp.toPx(), 80.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(15.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+                )
+                // Glowing laser eyes
+                val eyePulse = (1f + sin(relMs * 0.01).toFloat() * 0.2f)
+                drawCircle(
+                    color = getGracedColor(Color(0xFF22C55E), filterType),
+                    radius = 8.dp.toPx() * eyePulse,
+                    center = Offset(center.x - 18.dp.toPx(), center.y - 10.dp.toPx())
+                )
+                drawCircle(
+                    color = getGracedColor(Color(0xFF22C55E), filterType),
+                    radius = 8.dp.toPx() * eyePulse,
+                    center = Offset(center.x + 18.dp.toPx(), center.y - 10.dp.toPx())
+                )
+                // Scanner horizontal red/green bar panning
+                val scanY = center.y - 40.dp.toPx() + ((relMs * 0.05f) % 80.dp.toPx())
+                drawLine(
+                    color = getGracedColor(Color(0xFFEF4444).copy(alpha = 0.8f), filterType),
+                    start = Offset(center.x - 45.dp.toPx(), scanY),
+                    end = Offset(center.x + 45.dp.toPx(), scanY),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
+
+            if (lowerTitle.contains("car") || lowerTitle.contains("drive") || lowerTitle.contains("speed") || lowerTitle.contains("race") || lowerTitle.contains("hologram") || lowerTitle.contains("pursuit")) {
+                // Side speed trail lines
+                for (i in 1..5) {
+                    val lx = (relMs * 0.12f * i) % size.width
+                    val ly = size.height * 0.18f * i
+                    drawLine(
+                        color = getGracedColor(Color.White.copy(alpha = 0.35f), filterType),
+                        start = Offset(lx, ly),
+                        end = Offset(lx + 50.dp.toPx(), ly),
+                        strokeWidth = 2.dp.toPx()
+                    )
+                }
+                // Central fast pursuit tail lights
+                val flareLeftX = center.x - 40.dp.toPx()
+                val flareRightX = center.x + 40.dp.toPx()
+                drawCircle(
+                    color = getGracedColor(Color(0xFFFF2E93).copy(alpha = 0.6f), filterType),
+                    radius = 28.dp.toPx(),
+                    center = Offset(flareLeftX, center.y + 15.dp.toPx())
+                )
+                drawCircle(
+                    color = getGracedColor(Color(0xFFFF2E93).copy(alpha = 0.6f), filterType),
+                    radius = 28.dp.toPx(),
+                    center = Offset(flareRightX, center.y + 15.dp.toPx())
+                )
+            }
+
+            if (lowerTitle.contains("tree") || lowerTitle.contains("forest") || lowerTitle.contains("nature") || lowerTitle.contains("jungle") || lowerTitle.contains("bloom") || lowerTitle.contains("flower") || lowerTitle.contains("plant")) {
+                // Rows of glowing pine vector shapes
+                for (i in 0..4) {
+                    val tx = (i * 95.dp.toPx() + relMs * 0.02f) % (size.width + 60.dp.toPx()) - 30.dp.toPx()
+                    val ty = size.height * 0.72f
+                    val treePath = Path().apply {
+                        moveTo(tx, ty - 45.dp.toPx())
+                        lineTo(tx - 20.dp.toPx(), ty)
+                        lineTo(tx + 20.dp.toPx(), ty)
+                        close()
+                    }
+                    drawPath(treePath, color = getGracedColor(Color(0xFF10B981).copy(alpha = 0.8f), filterType))
+                }
+            }
+
+            if (lowerTitle.contains("food") || lowerTitle.contains("cook") || lowerTitle.contains("kitchen") || lowerTitle.contains("cake") || lowerTitle.contains("culinary") || lowerTitle.contains("soup")) {
+                // Chef boiling steaming pot vector
+                drawRoundRect(
+                    color = getGracedColor(Color(0xFFCBD5E1), filterType),
+                    topLeft = Offset(center.x - 30.dp.toPx(), center.y + 10.dp.toPx()),
+                    size = Size(60.dp.toPx(), 40.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx())
+                )
+                // Thermal heat steam lines rising
+                for (b in 1..3) {
+                    val bx = center.x - 20.dp.toPx() + b * 10.dp.toPx()
+                    val by = center.y + 10.dp.toPx() - ((relMs * 0.02f + b * 12) % 30).dp.toPx()
+                    drawCircle(
+                        color = getGracedColor(Color(0xFFFBBF24).copy(alpha = 0.5f), filterType),
+                        radius = (3 + b).dp.toPx(),
+                        center = Offset(bx, by)
+                    )
+                }
+            }
+
+            if (lowerTitle.contains("cat") || lowerTitle.contains("kitten") || lowerTitle.contains("dog") || lowerTitle.contains("pup") || lowerTitle.contains("feline") || lowerTitle.contains("pet") || lowerTitle.contains("animal") || lowerTitle.contains("whisker")) {
+                // Cute responsive feline vector outline overlay
+                drawCircle(
+                    color = getGracedColor(Color(0xFFF1F5F9), filterType),
+                    radius = 32.dp.toPx(),
+                    center = center
+                )
+                // Pointy cat ears vectors
+                val earL = Path().apply {
+                    moveTo(center.x - 28.dp.toPx(), center.y - 12.dp.toPx())
+                    lineTo(center.x - 38.dp.toPx(), center.y - 42.dp.toPx())
+                    lineTo(center.x - 8.dp.toPx(), center.y - 28.dp.toPx())
+                    close()
+                }
+                val earR = Path().apply {
+                    moveTo(center.x + 28.dp.toPx(), center.y - 12.dp.toPx())
+                    lineTo(center.x + 38.dp.toPx(), center.y - 42.dp.toPx())
+                    lineTo(center.x + 8.dp.toPx(), center.y - 28.dp.toPx())
+                    close()
+                }
+                drawPath(earL, color = getGracedColor(Color(0xFFE2E8F0), filterType))
+                drawPath(earR, color = getGracedColor(Color(0xFFE2E8F0), filterType))
+                // Whiskers outlines
+                drawLine(getGracedColor(Color(0xFF64748B), filterType), Offset(center.x - 18.dp.toPx(), center.y + 4.dp.toPx()), Offset(center.x - 45.dp.toPx(), center.y + 1.dp.toPx()), strokeWidth = 1.5.dp.toPx())
+                drawLine(getGracedColor(Color(0xFF64748B), filterType), Offset(center.x - 18.dp.toPx(), center.y + 8.dp.toPx()), Offset(center.x - 42.dp.toPx(), center.y + 10.dp.toPx()), strokeWidth = 1.5.dp.toPx())
+                drawLine(getGracedColor(Color(0xFF64748B), filterType), Offset(center.x + 18.dp.toPx(), center.y + 4.dp.toPx()), Offset(center.x + 45.dp.toPx(), center.y + 1.dp.toPx()), strokeWidth = 1.5.dp.toPx())
+                drawLine(getGracedColor(Color(0xFF64748B), filterType), Offset(center.x + 18.dp.toPx(), center.y + 8.dp.toPx()), Offset(center.x + 42.dp.toPx(), center.y + 10.dp.toPx()), strokeWidth = 1.5.dp.toPx())
             }
         }
     }

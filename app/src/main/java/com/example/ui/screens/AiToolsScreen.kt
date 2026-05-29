@@ -55,6 +55,15 @@ fun AiToolsScreen(
     val activeProject by viewModel.activeProject.collectAsState()
     val aiStatus by viewModel.aiStatus.collectAsState()
 
+    // Automatically navigate to timeline on successful AI video generation!
+    androidx.compose.runtime.LaunchedEffect(aiStatus) {
+        if ((aiStatus == "AI Project Generated Successfully!" || aiStatus == "AI Project Generated via Intelligent Fallback!") && activeProject != null) {
+            // Give a tiny delay for visual confirmation, then auto-route to timeline
+            kotlinx.coroutines.delay(800)
+            onOpenTimeline(activeProject!!.id)
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()

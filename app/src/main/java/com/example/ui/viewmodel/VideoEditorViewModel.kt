@@ -697,19 +697,39 @@ class VideoEditorViewModel(application: Application) : AndroidViewModel(applicat
         uploadedPictures: List<String> = emptyList(),
         style: String = "Realistic"
     ) {
-        val activeProj = _activeProject.value ?: return
-        
-        // Save targeted export aspect ratio straight into the active project settings!
-        saveActiveProjectSettings(aspectRatio)
-
         viewModelScope.launch {
+            _aiStatus.value = "Preparing database workspace..."
+            delay(300)
+            
+            // Wait or create active project container dynamically if not initialized
+            var activeProj = _activeProject.value
+            if (activeProj == null) {
+                val newProjId = repository.createNewProject("AI Storyboard: ${prompt.take(12)}", aspectRatio)
+                loadProject(newProjId)
+                for (attempt in 1..20) {
+                    delay(100)
+                    activeProj = _activeProject.value
+                    if (activeProj != null) break
+                }
+            }
+
+            if (activeProj == null) {
+                _aiStatus.value = "Error preparing workspace"
+                delay(1500)
+                _aiStatus.value = null
+                return@launch
+            }
+
+            // Save targeted export aspect ratio straight into the active project settings!
+            saveActiveProjectSettings(aspectRatio)
+
             _aiStatus.value = "Consulting Gemini AI pipeline..."
             val picsInfo = if (uploadedPictures.isNotEmpty()) {
                 "Guided by reference uploads: ${uploadedPictures.joinToString(", ")}."
             } else {
                 ""
             }
-            val robustPrompt = "Read this prompt: '$prompt'. The style aesthetic of the video is '$style'. The target video duration is $lengthSeconds seconds. The aspect ratio matches '$aspectRatio'. $picsInfo Output exactly three cinematic video storyboard blocks/shots formatted in style: '$style'. Divide the total duration of $lengthSeconds seconds among the 3 shots so that their durations sum up exactly to $lengthSeconds seconds. Output exactly three lines in the format 'shot_key | title | duration_seconds | subtitle_text'. Choose shot_key randomly from inside: neon_city, glitch_beach, mountain_peak, retro_grid, abstract_waves."
+            val robustPrompt = "Read this prompt: '$prompt'. The style aesthetic of the video is '$style'. The target video duration is $lengthSeconds seconds. The aspect ratio matches '$aspectRatio'. $picsInfo Output exactly three cinematic video storyboard blocks/shots formatted in style: '$style'. Divide the total duration of $lengthSeconds seconds among the 3 shots so that their durations sum up exactly to $lengthSeconds seconds. Output exactly three lines in the format 'shot_key | title | duration_seconds | subtitle_text'. Choose shot_key randomly from inside: neon_city, glitch_beach, mountain_peak, retro_grid, abstract_waves. Output ONLY the three raw lines, with no markdown formatting or intro/outro conversational text. Example:\nneon_city | Entering Tokyo Neon | 5.0 | City lights ignite the canvas\nglitch_beach | Sunset Glow | 5.0 | Drowning out the static hum\nmountain_peak | absolute peak | 5.0 | Reaching the absolute summit"
             
             val result = GeminiApiClient.generateText(robustPrompt)
             
@@ -789,10 +809,39 @@ class VideoEditorViewModel(application: Application) : AndroidViewModel(applicat
                 // Formatting fallback generator that perfectly matches requested length
                 pushUndoState()
                 val chunkMs = (lengthSeconds * 1000L) / 3
+                val promptLower = prompt.lowercase()
+                val scene1Keyword = when {
+                    promptLower.contains("space") || promptLower.contains("star") -> "Deep Space Ascent"
+                    promptLower.contains("cat") -> "Feline Astro Cook"
+                    promptLower.contains("car") || promptLower.contains("vehicle") -> "Hyperdrive Accelerator"
+                    promptLower.contains("nature") || promptLower.contains("forest") || promptLower.contains("tree") -> "Ancient Forest Bloom"
+                    promptLower.contains("food") || promptLower.contains("cook") -> "Galactic Culinary Soup"
+                    promptLower.contains("robot") || promptLower.contains("ai") -> "Synthetic Robot Grid"
+                    else -> "Cyber Scene"
+                }
+                val scene2Keyword = when {
+                    promptLower.contains("space") || promptLower.contains("star") -> "Constellation Path"
+                    promptLower.contains("cat") -> "Astro Whisker Flight"
+                    promptLower.contains("car") || promptLower.contains("vehicle") -> "Neon Cyber Pursuit"
+                    promptLower.contains("nature") || promptLower.contains("forest") || promptLower.contains("tree") -> "Pine Tree Fog"
+                    promptLower.contains("food") || promptLower.contains("cook") -> "Chef Bubbles Mix"
+                    promptLower.contains("robot") || promptLower.contains("ai") -> "Cyborg Scanner Scan"
+                    else -> "Wave Motion"
+                }
+                val scene3Keyword = when {
+                    promptLower.contains("space") || promptLower.contains("star") -> "Orbit Core Departure"
+                    promptLower.contains("cat") -> "Cosmic Feline Horizon"
+                    promptLower.contains("car") || promptLower.contains("vehicle") -> "Horizon Deceleration"
+                    promptLower.contains("nature") || promptLower.contains("forest") || promptLower.contains("tree") -> "Glacial Summit Light"
+                    promptLower.contains("food") || promptLower.contains("cook") -> "Culinary Steam Smoke"
+                    promptLower.contains("robot") || promptLower.contains("ai") -> "Android Face Active"
+                    else -> "Glacier Core"
+                }
+
                 _clips.value = listOf(
-                    ClipEntity(projectId = activeProj.id, title = "AI: Cyber Scene", type = "video", durationMs = chunkMs, sequenceIndex = 0, resourceName = "neon_city"),
-                    ClipEntity(projectId = activeProj.id, title = "AI: Wave Motion", type = "video", durationMs = chunkMs, sequenceIndex = 1, resourceName = "abstract_waves"),
-                    ClipEntity(projectId = activeProj.id, title = "AI: Glacier Core", type = "video", durationMs = chunkMs, sequenceIndex = 2, resourceName = "mountain_peak")
+                    ClipEntity(projectId = activeProj.id, title = "AI: $scene1Keyword", type = "video", durationMs = chunkMs, sequenceIndex = 0, resourceName = "neon_city"),
+                    ClipEntity(projectId = activeProj.id, title = "AI: $scene2Keyword", type = "video", durationMs = chunkMs, sequenceIndex = 1, resourceName = "abstract_waves"),
+                    ClipEntity(projectId = activeProj.id, title = "AI: $scene3Keyword", type = "video", durationMs = chunkMs, sequenceIndex = 2, resourceName = "mountain_peak")
                 )
                 _textOverlays.value = listOf(
                     TextOverlayEntity(projectId = activeProj.id, text = "AI Dream State Initiated...", startOffsetMs = 500L, durationMs = chunkMs - 1000L, isAutoCaption = true),
